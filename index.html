@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FF9933">
+  <meta name="description" content="Awaaz — file a civic complaint (garbage, broken roads) in under a minute. No app, no login.">
+  <title>Awaaz — Raise it. Get it fixed.</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📢</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="tricolor" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <header class="topbar">
+    <button class="brand" data-go="home" aria-label="Awaaz home">📢 <b>Awaaz</b></button>
+    <button class="link-btn" data-go="mine">My complaints <span id="mineCount" class="pill" hidden></span></button>
+  </header>
+
+  <main id="app">
+    <!-- HOME -->
+    <section id="screen-home" class="screen">
+      <h1 class="hero">Saw a problem?<br><span class="saffron">Raise your Awaaz.</span></h1>
+      <p class="sub">No app. No login. 60 seconds. We write the complaint, attach geo-tagged proof and tell you exactly whom to send it to.</p>
+
+      <div class="issue-grid" id="issueGrid"></div>
+
+      <ol class="how">
+        <li><b>📸 Snap</b> a photo</li>
+        <li><b>📍 Pin</b> the location</li>
+        <li><b>🚀 Send</b> to the right authority</li>
+      </ol>
+      <p class="fine">Your data stays on your phone. Nothing is uploaded to our servers. We don't have any.</p>
+    </section>
+
+    <!-- WIZARD -->
+    <section id="screen-wizard" class="screen" hidden>
+      <div class="wiz-head">
+        <button class="link-btn" id="backBtn">← Back</button>
+        <div class="progress"><div id="progressBar"></div></div>
+        <span id="stepLabel" class="step-label"></span>
+      </div>
+      <h2 id="wizTitle"></h2>
+
+      <!-- Step 1: photo -->
+      <div class="step" data-step="photo">
+        <p class="hint">A photo makes your complaint 10x harder to ignore.</p>
+        <label class="photo-drop" id="photoDrop">
+          <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+          <img id="photoPreview" alt="" hidden>
+          <span id="photoPrompt"><span class="big">📸</span><br>Tap to take a photo</span>
+        </label>
+        <button class="btn primary" data-next>Continue</button>
+        <button class="btn ghost" data-next data-skip-photo>Skip photo</button>
+      </div>
+
+      <!-- Step 2: location -->
+      <div class="step" data-step="location">
+        <button class="btn big-loc" id="locBtn">📍 Use my current location</button>
+        <p id="locStatus" class="hint"></p>
+        <a id="mapLink" target="_blank" rel="noopener" hidden>View on map ↗</a>
+        <label class="field">Address / area
+          <textarea id="address" rows="2" placeholder="e.g. Near Shiv Mandir, Sector 15, Rohini"></textarea>
+        </label>
+        <label class="field">City
+          <input id="city" list="cityList" placeholder="e.g. Delhi" autocomplete="address-level2">
+          <datalist id="cityList"></datalist>
+        </label>
+        <label class="field">Nearest landmark <span class="opt">(optional)</span>
+          <input id="landmark" placeholder="e.g. Opposite SBI ATM">
+        </label>
+        <button class="btn primary" data-next>Continue</button>
+      </div>
+
+      <!-- Step 3: details -->
+      <div class="step" data-step="details">
+        <p class="label">What exactly is the problem?</p>
+        <div class="chips" id="problemChips" data-field="problem"></div>
+        <div id="extraFields"></div>
+        <label class="field">Anything else? <span class="opt">(optional)</span>
+          <textarea id="notes" rows="2" placeholder="e.g. Children walk to school through this lane"></textarea>
+        </label>
+        <button class="btn primary" data-next>Continue</button>
+      </div>
+
+      <!-- Step 4: contact -->
+      <div class="step" data-step="contact">
+        <p class="hint">Optional, but officials respond faster to a named citizen. Saved only on this device.</p>
+        <label class="field">Your name
+          <input id="name" autocomplete="name" placeholder="e.g. Priya Sharma">
+        </label>
+        <label class="field">Mobile number
+          <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile">
+        </label>
+        <label class="check"><input type="checkbox" id="remember" checked> Remember me on this device</label>
+        <button class="btn primary" data-next>✨ Generate my complaint</button>
+      </div>
+    </section>
+
+    <!-- RESULT -->
+    <section id="screen-result" class="screen" hidden>
+      <div class="success">
+        <div class="big">✅</div>
+        <h2>Your complaint is ready</h2>
+        <p>Ref <b id="refId"></b>. Now send it. One tap each.</p>
+      </div>
+
+      <img id="stampedPhoto" class="stamped" alt="Geo-tagged evidence photo" hidden>
+
+      <div class="actions" id="actions"></div>
+
+      <details class="letter" open>
+        <summary>📄 Complaint letter</summary>
+        <pre id="letter"></pre>
+        <button class="btn ghost small" data-copy="letter">Copy letter</button>
+      </details>
+
+      <div class="card" id="portalsCard">
+        <h3>🏛️ Also file it officially</h3>
+        <p class="hint">Official portals give you a docket number and a legal clock. Paste the letter above.</p>
+        <div id="portals"></div>
+      </div>
+
+      <div class="card accountability">
+        <h3>⏱️ The accountability clock has started</h3>
+        <p>We saved this in <b>My complaints</b> on your phone. If it's not fixed in a week, come back and we'll write a public escalation for you.</p>
+        <button class="btn ghost" data-go="mine">Open My complaints</button>
+      </div>
+      <button class="btn primary" data-go="home">File another complaint</button>
+    </section>
+
+    <!-- MY COMPLAINTS -->
+    <section id="screen-mine" class="screen" hidden>
+      <h2>My complaints</h2>
+      <div id="scoreboard" class="scoreboard"></div>
+      <div id="mineList"></div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="authorities.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
