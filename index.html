@@ -45,11 +45,12 @@
       <!-- Step 1: photo -->
       <div class="step" data-step="photo">
         <p class="hint">A photo makes your complaint 10x harder to ignore.</p>
-        <label class="photo-drop" id="photoDrop">
-          <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-          <img id="photoPreview" alt="" hidden>
-          <span id="photoPrompt"><span class="big">📸</span><br>Tap to take a photo</span>
-        </label>
+        <button type="button" class="photo-drop" id="photoDrop">
+          <img id="photoPreview" alt="Your photo" hidden>
+          <span id="photoPrompt"><span class="big">📸</span><br>Tap to open camera</span>
+        </button>
+        <p id="camError" class="error" hidden></p>
+        <p class="hint">🔒 <b>Live photos only.</b> No gallery uploads, so officials can trust that every photo is real and current.</p>
         <button class="btn primary" data-next>Continue</button>
         <button class="btn ghost" data-next data-skip-photo>Skip photo</button>
       </div>
@@ -107,6 +108,9 @@
 
       <img id="stampedPhoto" class="stamped" alt="Geo-tagged evidence photo" hidden>
 
+      <div class="card official" id="officialCard"></div>
+
+      <h3 class="section">📣 Make it public</h3>
       <div class="actions" id="actions"></div>
 
       <details class="letter" open>
@@ -136,6 +140,16 @@
       <div id="mineList"></div>
     </section>
   </main>
+
+  <div id="camera" class="camera" hidden>
+    <video id="camVideo" autoplay playsinline muted></video>
+    <p class="cam-note">Live photo only. Point at the problem.</p>
+    <div class="cam-bar">
+      <button type="button" id="camClose" class="cam-btn" aria-label="Close camera">✕</button>
+      <button type="button" id="camShutter" class="shutter" aria-label="Take photo"></button>
+      <button type="button" id="camFlip" class="cam-btn" aria-label="Switch camera">🔄</button>
+    </div>
+  </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
 

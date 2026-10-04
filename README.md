@@ -8,6 +8,22 @@ authority over X, WhatsApp, email or the native share sheet.
 
 Complaint types in v1: **🗑️ Garbage** and **🚧 Broken roads**.
 
+**Live photos only:** the camera opens inside the page (`getUserMedia`). There is no file
+picker, so gallery or downloaded photos can't be used. Every evidence photo is stamped
+"Live photo" with its capture time and GPS location.
+
+## Official channels (verified 2026-10-04)
+
+| City | Garbage | Roads |
+|---|---|---|
+| Delhi | MCD: online form, 155305 | < 60 ft: MCD · ≥ 60 ft: PWD (complaint@pwddelhi.gov.in, WhatsApp bot 81301 88222, 1908) |
+| Mumbai | BMC WhatsApp bot 89992 28999, 1916 | Same bot (starts with "Pothole"), 1916 |
+| Bengaluru | GBA (ex-BBMP) WhatsApp 94806 85700, Sahaaya 1533 | Same |
+| Kolkata | KMC WhatsApp 83359 88888, bot 83359 99111, 1800-345-3375 | Same |
+| Any highway | | NHAI 1033 |
+
+Other cities fall back to X tagging and the national portals. Sources are noted in `authorities.js`.
+
 ## Run locally
 
 ```sh
@@ -35,7 +51,8 @@ It's just 4 static files. Drop the folder on **GitHub Pages**, **Netlify** or **
 
 ## ⚠️ Before going public
 
-- Verify every X handle in `CITIES` (all are marked `verify: true`). Civic bodies rename and restructure.
+- Re-check the official channels every few months; civic bodies rename and restructure (BBMP → GBA in 2025).
+- X handles (@MCD_Delhi, @mybmc, @GBA_office, @kmc_kolkata) were seen on X but not checked against official sites.
 - For heavy traffic, swap Nominatim for a geocoder whose usage policy allows it.
 
 ## Ideas for v2

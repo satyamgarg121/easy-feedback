@@ -21,7 +21,7 @@ let stepIndex = 0;
 function freshState(issueKey) {
   return {
     issue: ISSUES[issueKey],
-    photo: null, // resized JPEG data URL
+    photo: null, photoAt: null, // live-captured JPEG data URL and when it was taken
     lat: null, lng: null, accuracy: null,
     address: '', city: '', landmark: '',
     problem: '', extras: {}, notes: '',
@@ -41,6 +41,7 @@ const store = {
 
 // ---------- navigation ----------
 function show(screen) {
+  if (camStream) closeCamera();
   $$('.screen').forEach(s => { s.hidden = s.id !== `screen-${screen}`; });
   if (screen === 'home') renderHome();
   if (screen === 'mine') renderMine();
@@ -109,7 +110,7 @@ function startWizard(issueKey) {
   ['address', 'city', 'landmark', 'notes'].forEach(id => { $('#' + id).value = ''; });
   $('#name').value = state.name;
   $('#phone').value = state.phone;
-  $('#photoInput').value = '';
+  $('#camError').hidden = true;
   $('#photoPreview').hidden = true;
   $('#photoPrompt').hidden = false;
   $('#locStatus').textContent = '';
@@ -120,7 +121,7 @@ function startWizard(issueKey) {
   $('#extraFields').innerHTML = '';
   state.issue.extras.forEach(x => {
     const wrap = document.createElement('div');
-    wrap.innerHTML = `<p class="label">${x.label}</p><div class="chips"></div>`;
+    wrap.innerHTML = `<p class="label">${x.label}${x.hint ? ` <span class="opt">${x.hint}</span>` : ''}</p><div class="chips"></div>`;
     renderChips($('.chips', wrap), x.options, v => { state.extras[x.id] = v; });
     $('#extraFields').appendChild(wrap);
   });
@@ -189,19 +190,78 @@ function validate(step) {
   return true;
 }
 
-// ---------- photo ----------
-$('#photoInput').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    state.photo = await resizeImage(file, 1600);
-    $('#photoPreview').src = state.photo;
-    $('#photoPreview').hidden = false;
-    $('#photoPrompt').hidden = true;
-  } catch {
-    toast('Could not read that image');
-  }
+// ---------- photo: live camera only ----------
+// Photos come straight from an in-page camera stream, never from a file picker, so the
+// gallery (old or downloaded photos) is impossible to use. Fair to citizens and officials alike.
+let camStream = null;
+let camFacing = 'environment';
+
+$('#photoDrop').addEventListener('click', openCamera);
+$('#camClose').addEventListener('click', closeCamera);
+$('#camShutter').addEventListener('click', capturePhoto);
+$('#camFlip').addEventListener('click', () => {
+  camFacing = camFacing === 'environment' ? 'user' : 'environment';
+  stopStream();
+  openCamera();
 });
+
+function camFail(msg) {
+  closeCamera();
+  const el = $('#camError');
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+async function openCamera() {
+  $('#camError').hidden = true;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    camFail('This browser can\'t open the camera. Try Chrome or Safari on your phone, or skip the photo.');
+    return;
+  }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: camFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+    });
+  } catch (err) {
+    camFail(err.name === 'NotAllowedError'
+      ? 'Camera permission was blocked. Allow camera access for this site in your browser settings and tap again, or skip the photo.'
+      : 'Could not start the camera. Close other apps using it and tap again, or skip the photo.');
+    return;
+  }
+  $('#camVideo').srcObject = camStream;
+  $('#camera').hidden = false;
+  document.body.classList.add('no-scroll');
+}
+
+function stopStream() {
+  camStream?.getTracks().forEach(t => t.stop());
+  camStream = null;
+}
+
+function closeCamera() {
+  stopStream();
+  $('#camVideo').srcObject = null;
+  $('#camera').hidden = true;
+  document.body.classList.remove('no-scroll');
+}
+
+function capturePhoto() {
+  const v = $('#camVideo');
+  if (!v.videoWidth) { toast('Camera is still starting…'); return; }
+  const scale = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(v.videoWidth * scale);
+  c.height = Math.round(v.videoHeight * scale);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  state.photo = c.toDataURL('image/jpeg', 0.85);
+  state.photoAt = new Date();
+  $('#photoPreview').src = state.photo;
+  $('#photoPreview').hidden = false;
+  $('#photoPrompt').hidden = true;
+  closeCamera();
+  toast('📸 Got it! Tap the photo to retake.');
+}
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -210,21 +270,6 @@ function loadImage(src) {
     img.onerror = reject;
     img.src = src;
   });
-}
-
-async function resizeImage(file, maxSide) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await loadImage(url);
-    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * scale);
-    c.height = Math.round(img.height * scale);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.85);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 // ---------- location ----------
@@ -286,15 +331,13 @@ function shortArea() {
   return state.address.split(',').slice(0, 2).join(',').trim() || state.city;
 }
 
-function handlesFor(s, cityInfo) {
-  const h = [...(cityInfo?.handles || [])];
-  if (s.extras.roadType === 'National / State highway') h.unshift(...(s.issue.highwayHandles || []));
-  h.push(...s.issue.nationalHandles);
+function handlesFor(s, authorities) {
+  const h = [...authorities.flatMap(a => a.handles), ...s.issue.nationalHandles];
   return [...new Set(h)].slice(0, 3);
 }
 
-function buildLetter(s, id, cityInfo, when) {
-  const body = cityInfo ? cityInfo.body : `Municipal Corporation / Nagar Nigam, ${s.city}`;
+function buildLetter(s, id, authorities, when) {
+  const body = authorities[0]?.body || `Municipal Corporation / Nagar Nigam, ${s.city}`;
   const lines = [
     `To,`,
     `The Commissioner / Officer In-charge,`,
@@ -314,7 +357,7 @@ function buildLetter(s, id, cityInfo, when) {
     `• Reported on: ${when.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`,
     s.notes ? `• Additional details: ${s.notes}` : null,
     ``,
-    s.photo ? `A geo-tagged, time-stamped photograph of the site is attached as evidence.\n` : null,
+    s.photo ? `A live, geo-tagged and time-stamped photograph of the site is attached as evidence.\n` : null,
     `I request you to kindly get this resolved at the earliest, within the timeline of your Citizen Charter, and share the action taken. I will follow up on this complaint.`,
     ``,
     `Thanking you,`,
@@ -324,8 +367,24 @@ function buildLetter(s, id, cityInfo, when) {
   return lines.filter(l => l !== null).join('\n');
 }
 
-function buildPost(s, id, cityInfo) {
-  const handles = handlesFor(s, cityInfo).join(' ');
+// Short version for WhatsApp helplines, which officials read on a phone.
+function buildWhatsApp(s, id, when) {
+  return [
+    `*Civic complaint* (Ref ${id})`,
+    `Issue: ${s.problem}`,
+    ...s.issue.extras.filter(x => s.extras[x.id]).map(x => `${x.label.replace('?', '')}: ${s.extras[x.id]}`),
+    `Location: ${[s.address, s.landmark && `near ${s.landmark}`, s.city].filter(Boolean).join(', ')}`,
+    s.lat != null ? `Map: ${mapsUrl(s.lat, s.lng)}` : null,
+    `Reported: ${when.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`,
+    s.notes ? `Details: ${s.notes}` : null,
+    s.photo ? `Live photo attached.` : null,
+    s.name || s.phone ? `From: ${[s.name, s.phone].filter(Boolean).join(', ')}` : null,
+    `Please resolve and share the complaint number.`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildPost(s, id, authorities) {
+  const handles = handlesFor(s, authorities).join(' ');
   const extra = [s.extras.since && `Since: ${s.extras.since}.`, s.extras.danger && `${s.extras.danger}!`].filter(Boolean).join(' ');
   const tail = `${s.lat != null ? `\n📍 ${mapsUrl(s.lat, s.lng)}` : ''}\nRef ${id}\n${handles} please act. ${s.issue.hashtags.join(' ')}`;
   let area = `${shortArea()}, ${s.city}`;
@@ -346,7 +405,7 @@ async function stampPhoto(dataUrl, id, when) {
   const fs = Math.max(14, Math.round(c.width / 40));
   const lines = [
     state.lat != null ? `📍 ${state.lat}, ${state.lng}  (±${state.accuracy} m)` : `📍 ${shortArea()}`,
-    `${state.city}  •  ${when.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`,
+    `${state.city}  •  📷 Live photo, ${(state.photoAt || when).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`,
     `${state.issue.emoji} ${state.problem}  •  Ref ${id}  •  Awaaz`,
   ];
   const pad = fs * 0.6;
@@ -371,8 +430,10 @@ async function finish() {
   const when = new Date();
   const id = makeRefId();
   const cityInfo = findCity(state.city) || findCity(state.address);
-  const letter = buildLetter(state, id, cityInfo, when);
-  const post = buildPost(state, id, cityInfo);
+  const authorities = routeFor(cityInfo, state.issue.key, state.extras);
+  const letter = buildLetter(state, id, authorities, when);
+  const post = buildPost(state, id, authorities);
+  const waText = buildWhatsApp(state, id, when);
   const subject = `Complaint: ${state.problem} at ${shortArea()}, ${state.city} (Ref ${id})`;
   const stamped = state.photo ? await stampPhoto(state.photo, id, when) : null;
   const photoFile = stamped ? await dataUrlToFile(stamped, `${id}.jpg`) : null;
@@ -421,6 +482,8 @@ async function finish() {
     box.appendChild(tip);
   }
 
+  renderOfficial(authorities, { letter, waText, subject, hasPhoto: !!stamped });
+
   $('#portals').innerHTML = state.issue.portals.map(p => `
     <a class="portal" href="${p.url}" ${p.url.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>
       <b>${esc(p.name)} ↗</b><span>${esc(p.desc)}</span>
@@ -430,11 +493,67 @@ async function finish() {
   list.unshift({
     id, issue: state.issue.key, problem: state.problem, area: shortArea(), city: state.city,
     lat: state.lat, lng: state.lng, createdAt: when.toISOString(), status: 'open',
-    handles: handlesFor(state, cityInfo),
+    handles: handlesFor(state, authorities),
   });
   if (!store.set(STORE_KEY, list.slice(0, 100))) toast('Could not save to this device (private mode?)');
 
   show('result');
+}
+
+const CHANNEL_ICON = { whatsapp: '💬', call: '📞', email: '✉️', web: '🌐' };
+
+function channelHref(ch, ctx) {
+  if (ch.kind === 'whatsapp') return `https://wa.me/${ch.value}?text=${encodeURIComponent(ch.bot ? ch.prefill : ctx.waText)}`;
+  if (ch.kind === 'call') return `tel:${ch.value}`;
+  if (ch.kind === 'email') return `mailto:${ch.value}?subject=${encodeURIComponent(ctx.subject)}&body=${encodeURIComponent(ctx.letter)}`;
+  return ch.value;
+}
+
+function channelDisplay(ch) {
+  if (ch.kind === 'whatsapp') return '+' + ch.value.replace(/^91(\d{5})(\d{5})$/, '91 $1 $2');
+  if (ch.kind === 'web') return new URL(ch.value).hostname;
+  return ch.value;
+}
+
+function channelHint(ch, ctx) {
+  if (ch.kind === 'whatsapp' && ch.bot) return `Automated bot: complaint is copied, paste it when the bot asks.${ctx.hasPhoto ? ' Attach the saved photo.' : ''}`;
+  if (ch.kind === 'whatsapp') return `Complaint is pre-typed.${ctx.hasPhoto ? ' Attach the saved photo, then send.' : ' Just hit send.'}`;
+  if (ch.kind === 'email') return `Letter is pre-filled.${ctx.hasPhoto ? ' Attach the saved photo.' : ''}`;
+  if (ch.kind === 'web') return 'Official form. Paste the letter (copied for you).';
+  return 'Read out the complaint below. Note down the complaint number they give you.';
+}
+
+// The "actually file it" card: the official channels of the authority responsible.
+function renderOfficial(authorities, ctx) {
+  const card = $('#officialCard');
+  if (!authorities.length) {
+    const covered = CITIES.map(c => c.city).join(', ');
+    card.innerHTML = `
+      <h3>🎯 Send it to the officials</h3>
+      <p class="hint">We have verified official channels for ${covered} so far. ${esc(state.city)} is coming soon.
+      Meanwhile, tag officials on X below and file on the national portals at the bottom.</p>`;
+    return;
+  }
+  card.innerHTML = `<h3>🎯 Send it to the officials</h3>
+    <p class="hint">Verified official channels for this complaint. Use the first one, and the rest if needed.</p>` +
+    authorities.map((a, ai) => `
+      <div class="authority">
+        <p class="who">🏛️ <b>${esc(a.body)}</b>${a.note ? `<br><span>${esc(a.note)}</span>` : ''}</p>
+        ${a.channels.map((ch, ci) => `
+          <a class="channel ${ai === 0 && ci === 0 ? 'first' : ''} ${ch.kind}" data-a="${ai}" data-c="${ci}" href="${esc(channelHref(ch, ctx))}"
+             ${ch.kind === 'whatsapp' || ch.kind === 'web' ? 'target="_blank" rel="noopener"' : ''}>
+            <span class="ic">${CHANNEL_ICON[ch.kind]}</span>
+            <span class="txt"><b>${esc(ch.label)}</b><span class="val">${esc(channelDisplay(ch))}</span>
+            <span class="tip">${esc(channelHint(ch, ctx))}</span></span>
+          </a>`).join('')}
+      </div>`).join('');
+  card.onclick = e => {
+    const a = e.target.closest('.channel');
+    if (!a) return;
+    const ch = authorities[a.dataset.a].channels[a.dataset.c];
+    if (ch.bot) copyText(ctx.waText);
+    else if (ch.kind === 'web') copyText(ctx.letter);
+  };
 }
 
 // ---------- my complaints: the accountability ledger ----------
